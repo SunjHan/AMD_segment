@@ -24,7 +24,8 @@ import numpy as np
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 train_data_path = '/data3/AMD/Training400/AMD_all/'#训练文件路径
 train_data_Label_path = '/data3/AMD/Training400/Disc_Masks/' #mask文件路径
-result_mask_path = '/data3/AMD/valid_mask_predict_resUnet_1128/' #结果存放路径
+result_mask_path = '/data3/AMD/valid_mask_predict_resUnet_dice_1129test/' #结果存放路径
+# result_mask_path_before_thre = '/data3/AMD/valid_mask_predict_resUnet_1129_before/'
 model_path = "/data3/AMD/weights_11.pth"
 
 # 是否使用cuda
@@ -44,9 +45,9 @@ y_transforms = transforms.Compose([
 ])
 
 def model2():
-    model = Unet(3, 1).to(device)
+    # model = Unet(3, 1).to(device)
     # model = torch.hub.load('pytorch/vision:v0.4.2', 'deeplabv3_resnet101', pretrained=True).to(device)
-    # model3 = res_Unet(in_ch=3, out_ch=1).to(device)
+    model3 = res_Unet(in_ch=3, out_ch=1).to(device)
     # model = DeepLabv3_plus(nInputChannels=3, n_classes=1, os=16, pretrained=True, _print=True).to(device)
     return model3
 
@@ -82,8 +83,8 @@ def train(args):
 
     batch_size = args.batch_size
 
-    # criterion = DiceLoss()
-    criterion = torch.nn.BCEWithLogitsLoss()
+    criterion = DiceLoss()
+    # criterion = torch.nn.BCEWithLogitsLoss()
     
     optimizer = optim.Adam(model.parameters())
     
@@ -109,30 +110,49 @@ def valid():
     if not os.path.exists(result_mask_path):
         print("make dirs------")
         os.makedirs(result_mask_path)
+    # if not os.path.exists(result_mask_path_before_thre):
+    #     print("make dirs------")
+    #     os.makedirs(result_mask_path_before_thre)
 
     model.eval()
     with torch.no_grad():
         i=0
-        epoch_loss = 0
+        # epoch_loss = 0
         dt_size = len(dataloaders.dataset)
         for x, labels, x_path in dataloaders:
             i += 1
+            x = x.to(device)
+            labels = labels.to(device)
             y=model(x)
-            y = sigmoid(y)
-            loss = criterion(y, labels)
-            epoch_loss += loss.item()
-            print("%d/%d,dice_loss:%0.3f" % (i, (dt_size - 1) // dataloaders.batch_size + 1, loss.item()))
+            y2=y
+            # y = sigmoid(y)
+            # loss = criterion(y, labels)
+            # epoch_loss += loss.item()
+            
+            # print("%d/%d,dice_loss:%0.3f" % (i, (dt_size - 1) // dataloaders.batch_size + 1, loss.item()))
+            print("%d/%d-----" % (i, (dt_size)))
+            
+            y[y>0.5] = 1
+            y[y<=0.5] = 0
+            score = dice(y, labels)
 
-            img_y = torch.squeeze(y).numpy()
+            img_name = str(x_path).split('.')[0]
+            img_name = img_name.split('/')[-1]
+            print(img_name, " score: ", score.item())
+            # img_real = img_y * 255
+            # im = Image.fromarray(img_real)
+            # im = im.convert("L")
+            # img_name = str(x_path).split('.')[0]
+            # img_name = img_name.split('/')[-1]
+            # print(img_name)
+            # im.save(result_mask_path_before_thre + img_name + ".bmp")
+            img_y = torch.squeeze(y2.cpu()).numpy()
             img_y[img_y>0.5] = 255
             img_y[img_y<=0.5] = 0
             im = Image.fromarray(img_y)
             im = im.convert("L")
-            img_name = str(x_path).split('.')[0]
-            img_name = img_name.split('/')[-1]
-            print(img_name)
             im.save(result_mask_path + img_name + ".bmp")
-        print("loss:%0.3f" % (epoch_loss/i))
+        # print("loss:%0.3f" % (epoch_loss/i))
 
 
 if __name__ == '__main__':
